@@ -1,6 +1,6 @@
 # TP - Cloud and Edge infrastructures
 
-## Élèves: Ignacio Perez and Diego Sierra
+## Students: Ignacio Perez (@NachitoPerez) and Diego Sierra (@dasierra2021)
 
 The current project is to generate a web cloud architecture for a company to track its sales. The architecture consists of three different applications as follows:
 
