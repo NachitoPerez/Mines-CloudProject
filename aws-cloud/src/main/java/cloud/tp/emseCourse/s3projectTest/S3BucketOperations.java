@@ -1,4 +1,4 @@
-package fr.emse.s3projectTest;
+package cloud.tp.emseCourse.s3projectTest;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;

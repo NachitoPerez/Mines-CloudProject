@@ -1,4 +1,4 @@
-package fr.emse.sns;
+package cloud.tp.emseCourse.sns;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sns.SnsClient;

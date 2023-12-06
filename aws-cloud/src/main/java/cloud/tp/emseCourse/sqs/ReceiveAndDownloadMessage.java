@@ -1,4 +1,4 @@
-package fr.emse.sqs;
+package cloud.tp.emseCourse.sqs;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsClient;

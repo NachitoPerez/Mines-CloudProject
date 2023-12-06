@@ -1,4 +1,4 @@
-package fr.emse.sns;
+package cloud.tp.emseCourse.sns;
 
 import java.text.SimpleDateFormat;
 import java.util.Calendar;

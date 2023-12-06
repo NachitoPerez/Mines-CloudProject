@@ -1,7 +1,6 @@
 package cloud.tp.emseCourse.s3projectTest;
 
-import javax.swing.plaf.synth.Region;
-
+import cloud.tp.Constants;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
@@ -11,7 +10,7 @@ public class CreateEC2Instance {
         String amiId = "ami-0e8a34246278c21e4";
 
         // Create an EC2 client
-        Ec2Client ec2 = Ec2Client.builder().region(Region.US_EAST_1).build();
+        Ec2Client ec2 = Ec2Client.builder().region(Constants.REGION).build();
 
         // Specify the details for the new EC2 US_EAST_1instance
         RunInstancesRequest runRequest = RunInstancesRequest.builder()

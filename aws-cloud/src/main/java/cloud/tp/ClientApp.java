@@ -1,12 +1,16 @@
-package main.java.cloud.tp;
+package cloud.tp;
 
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import java.io.File;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import java.io.File;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 public class ClientApp {
     public static void main(String[] args) throws Exception {
@@ -15,30 +19,32 @@ public class ClientApp {
             System.exit(1);
         }
 
-        String bucketName = "cloudprojecttest";
         String filePath = args[0];
 
         // Create an S3 client
-        S3Client s3 = S3Client.builder().region(Region.US_EAST_1).build();
+        S3Client s3 = S3Client.builder().region(Constants.REGION).build();
 
         // Check if the bucket exists
-        if (!doesBucketExist(s3, bucketName)) {
+        if (!doesBucketExist(s3)) {
             throw new Exception("Bucket not correct");
         }
 
-        //Change name file from {date}-store{number}.csv to store{number}/{date}.csv
+        // Change name file from {date}-store{number}.csv to store{number}/{date}.csv
         String newName = modifyFileName(filePath);
 
         // Upload the file to the bucket
-        uploadFile(s3, bucketName, newName, new File(filePath));
+        uploadFile(s3, newName, new File(filePath));
 
-        // Close the S3 client
+        // Send SQS msg
+        sendSQSmsg(newName);
+        
+        // Close the s3 client
         s3.close();
     }
 
-    private static boolean doesBucketExist(S3Client s3, String bucketName) {
+    private static boolean doesBucketExist(S3Client s3) {
         HeadBucketRequest headBucketRequest = HeadBucketRequest.builder()
-                .bucket(bucketName)
+                .bucket(Constants.BUCKET_NAME)
                 .build();
 
         try {
@@ -79,13 +85,26 @@ public class ClientApp {
         }
     }
 
-    private static void uploadFile(S3Client s3, String bucketName, String key, File file) {
+    private static void uploadFile(S3Client s3, String key, File file) {
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(Constants.BUCKET_NAME)
                 .key(key)
                 .build();
 
         s3.putObject(putObjectRequest, file.toPath());
-        System.out.println("File " + key + " uploaded to S3 bucket: " + bucketName);
-    }  
+        System.out.println("File " + key + " uploaded to S3 bucket: " + Constants.BUCKET_NAME);
+    }
+
+    private static void sendSQSmsg(String fileName){
+        SqsClient sqsClient = SqsClient.builder().region(Constants.REGION).build();
+        SendMessageRequest sendRequest = SendMessageRequest.builder().queueUrl(Constants.QUEUE_URL)
+            .messageBody(Constants.BUCKET_NAME + ";" + fileName).build();
+
+        SendMessageResponse sqsResponse = sqsClient.sendMessage(sendRequest);
+
+        System.out.println(
+            sqsResponse.messageId() + " Message sent. Status is " + sqsResponse.sdkHttpResponse().statusCode());
+        
+        sqsClient.close();
+    }
 }
