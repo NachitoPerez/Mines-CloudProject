@@ -103,7 +103,7 @@ public class ClientApp {
         SendMessageResponse sqsResponse = sqsClient.sendMessage(sendRequest);
 
         System.out.println(
-            sqsResponse.messageId() + " Message sent. Status is " + sqsResponse.sdkHttpResponse().statusCode());
+            sqsResponse.messageId() + " Message "+ Constants.BUCKET_NAME + ";" + fileName +" sent. Status is " + sqsResponse.sdkHttpResponse().statusCode());
         
         sqsClient.close();
     }
