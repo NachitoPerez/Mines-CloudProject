@@ -1,4 +1,4 @@
-package fr.emse.lambda;
+package cloud.tp.emseCourse.tds.lambda;
 
 import java.io.BufferedReader;
 import java.io.IOException;

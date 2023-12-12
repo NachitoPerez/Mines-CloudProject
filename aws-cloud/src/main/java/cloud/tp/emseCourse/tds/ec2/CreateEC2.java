@@ -1,4 +1,4 @@
-package fr.emse.ec2;
+package cloud.tp.emseCourse.tds.ec2;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.ec2.Ec2Client;
@@ -34,7 +34,7 @@ public class CreateEC2 {
     String instanceId = response.instances().get(0).instanceId();
 
     // Create the Tag for the instance
-    Tag tag = Tag.builder().key("Name").value("My Instance").build();
+    Tag tag = Tag.builder().key("Name").value("EC2_VirtualMachine_Worker").build();
 
     // Create a request to set the Tag
     CreateTagsRequest tagRequest = CreateTagsRequest.builder()

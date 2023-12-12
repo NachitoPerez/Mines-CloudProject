@@ -1,4 +1,4 @@
-package fr.emse.ec2;
+package cloud.tp.emseCourse.tds.ec2;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.ec2.Ec2Client;

@@ -1,4 +1,4 @@
-package fr.emse.s3;
+package cloud.tp.emseCourse.tds.s3;
 
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;

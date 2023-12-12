@@ -8,9 +8,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
-import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
-import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
+
 
 public class ClientApp {
     public static void main(String[] args) throws Exception {
@@ -20,6 +18,8 @@ public class ClientApp {
         }
 
         String filePath = args[0];
+        System.setProperty("aws.sharedCredentialsFile", "/home/ec2-user/.aws/credentials");
+        System.setProperty("aws.profile", "default");
 
         // Create an S3 client
         S3Client s3 = S3Client.builder().region(Constants.REGION).build();
@@ -34,9 +34,6 @@ public class ClientApp {
 
         // Upload the file to the bucket
         uploadFile(s3, newName, new File(filePath));
-
-        // Send SQS msg
-        sendSQSmsg(newName);
         
         // Close the s3 client
         s3.close();
@@ -93,18 +90,5 @@ public class ClientApp {
 
         s3.putObject(putObjectRequest, file.toPath());
         System.out.println("File " + key + " uploaded to S3 bucket: " + Constants.BUCKET_NAME);
-    }
-
-    private static void sendSQSmsg(String fileName){
-        SqsClient sqsClient = SqsClient.builder().region(Constants.REGION).build();
-        SendMessageRequest sendRequest = SendMessageRequest.builder().queueUrl(Constants.QUEUE_URL)
-            .messageBody(Constants.BUCKET_NAME + ";" + fileName).build();
-
-        SendMessageResponse sqsResponse = sqsClient.sendMessage(sendRequest);
-
-        System.out.println(
-            sqsResponse.messageId() + " Message sent. Status is " + sqsResponse.sdkHttpResponse().statusCode());
-        
-        sqsClient.close();
     }
 }

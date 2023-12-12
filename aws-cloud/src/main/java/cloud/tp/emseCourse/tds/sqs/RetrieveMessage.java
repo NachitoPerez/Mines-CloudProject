@@ -1,4 +1,4 @@
-package fr.emse.sqs;
+package cloud.tp.emseCourse.tds.sqs;
 
 import java.io.File;
 import java.io.FileOutputStream;
