@@ -37,6 +37,7 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 public class WorkerFunctions {
     public static String downloadFileFromS3(String bucketName, String fileName) {
         S3Client s3Client = S3Client.builder().region(Region.US_EAST_1).build();
+        String response = null;
 
         // Check file exists
         ListObjectsRequest listObjects = ListObjectsRequest.builder().bucket(bucketName).build();
@@ -59,13 +60,11 @@ public class WorkerFunctions {
                 e.printStackTrace();
             }
 
-            return "fileToProcess.csv";
-        } else {
-            System.out.println("File is not available in the Bucket");
+            response = "fileToProcess.csv";
         }
             
         s3Client.close();
-        return null;
+        return response;
     }
 
     private static List<Map<String, String>> parseCSVFile(String fileName) {
@@ -75,8 +74,6 @@ public class WorkerFunctions {
              CSVParser csvParser = CSVFormat.DEFAULT.withDelimiter(';').withFirstRecordAsHeader().parse(reader)) {
 
             for (CSVRecord csvRecord : csvParser) {
-                // Each CSVRecord is a map where the keys are the header column names
-                // and values are the corresponding values in the current row
                 csvData.add(csvRecord.toMap());
             }
 
@@ -98,7 +95,7 @@ public class WorkerFunctions {
     }
 
     public static void summarizeSalesByStore(Map<String, Map<String, Double>> storeSummaries, String downloadedFileName){
-        Map<String, Map<String, Double>> moreStoreSummaries = summarizeMyFile(downloadedFileName);
+        Map<String, Map<String, Double>> moreStoreSummaries = summarizeMyFileByStore(downloadedFileName);
 
         for (String key : moreStoreSummaries.keySet()) {
             if (storeSummaries.containsKey(key)) {
@@ -111,7 +108,7 @@ public class WorkerFunctions {
         }
     }
 
-    private static Map<String, Map<String, Double>> summarizeMyFile(String fileName) {
+    private static Map<String, Map<String, Double>> summarizeMyFileByStore(String fileName) {
         List<Map<String, String>> csvData = parseCSVFile(fileName);
 
         // Summarize sales by date and store
@@ -153,43 +150,28 @@ public class WorkerFunctions {
         return fileNames;
     }
 
-    public static void uploadProductsResumeFileToS3(List<String> fileNames) {
+    public static void uploadResumeFilesToS3(Map<String, List<String>> fileNames) {
         S3Client s3Client = S3Client.builder().region(Region.US_EAST_1).build();
 
         try {
-            for (String fileName : fileNames) {
-                String key = "storeResumes/" + fileName;
-    
-                // Check if the object already exists in the bucket
-                String existingFileName = downloadFileFromS3(Constants.BUCKET_NAME, key);
-    
-                if (existingFileName != null) {
-                    // Object exists, read and merge the content with the new file    
-                    // Read the existing content from the existing file
-                    List<String> existingContent = readContentFromFile(existingFileName);
-                    
-                    // Read the new content from the new file
-                    List<String> newContent = readContentFromFile(fileName);
-    
-                    // Merge the content
-                    List<String> mergedContent = mergeContent(existingContent, newContent);
+            for (Map.Entry<String, List<String>> fileName : fileNames.entrySet()) {
+                String directory = fileName.getKey();
 
-                    // Create file with updated content
-                    try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
-                        writer.write("Store;TotalDailyProfit");
-                        writer.newLine();
-                        for (String line : mergedContent) {
-                            writer.write(line);
-                            writer.newLine();
-                        }
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                List<String> files2Upload = fileName.getValue();
+
+                for (String file : files2Upload) {
+                    // Check if the object already exists in the bucket
+                    String existingFileName = downloadFileFromS3(Constants.BUCKET_NAME, directory+"/"+file);
+
+                    if (existingFileName != null) {
+                        // Object exists, read and merge the content with the new file    
+                        createMergedFile(existingFileName, file);                        
                     }
-                }
+                        
+                    uploadNewObject(s3Client, Constants.BUCKET_NAME, directory + "/" + file, new File(file));
 
-                uploadNewObject(s3Client, Constants.BUCKET_NAME, key, new File(fileName));
-    
-                System.out.println("File uploaded to S3 bucket: " + Constants.BUCKET_NAME + ", Key: " + key);
+                    System.out.println("File uploaded to S3 bucket: " + Constants.BUCKET_NAME + ", Key: " + file);
+                }                
             }
 
         } catch (S3Exception e) {
@@ -197,6 +179,33 @@ public class WorkerFunctions {
         } finally {
             // Close the S3 client
             s3Client.close();
+        }
+    }
+
+    private static void createMergedFile(String existingFileName, String file) {
+        // Read the existing content from the existing file
+        List<String> existingContent = readContentFromFile(existingFileName);
+        
+        // Read the new content from the new file
+        List<String> newContent = readContentFromFile(file);
+
+        // Merge the content
+        List<String> mergedContent = mergeContent(existingContent, newContent);
+
+        // Create file with updated content
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
+            if (mergedContent.get(0).split(";").length == 2) {
+                writer.write("Store;TotalDailyProfit");
+            } else if (mergedContent.get(0).split(";").length == 4){
+                writer.write("Product;Total quantity;Total sold;Total profit");
+            }
+            writer.newLine();
+            for (String line : mergedContent) {
+                writer.write(line);
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -223,19 +232,24 @@ public class WorkerFunctions {
     }
 
     private static List<String> mergeContent(List<String> existingContent, List<String> newContent) {
-        // Implement logic to merge existing and new content
-        // This depends on the structure of your files and how you want to update them
 
         Map<String, Double> storeProfitMap = new HashMap<>();
+        Map<String, ProductSummaryData> productMap = new HashMap<>();
 
         // Populate storeProfitMap with existing content
         for (String line : existingContent) {
-            //System.out.println("parts: " + line);
             String[] parts = line.split(";");
             if (parts.length == 2) {
                 String store = parts[0];
                 double totalProfit = Double.parseDouble(parts[1]);
                 storeProfitMap.put(store, totalProfit);
+            } else if (parts.length == 4) {
+                String product = parts[0];
+                int quantity = Integer.parseInt(parts[1]);
+                double sold = Double.parseDouble(parts[2]);
+                double profit = Double.parseDouble(parts[3]);
+
+                productMap.put(product, new ProductSummaryData(quantity, sold, profit));
             }
         }
 
@@ -246,6 +260,19 @@ public class WorkerFunctions {
                 String store = parts[0];
                 double totalProfit = Double.parseDouble(parts[1]);
                 storeProfitMap.merge(store, totalProfit, Double::sum);
+            } else if (parts.length == 4) {
+                String product = parts[0];
+                int quantity = Integer.parseInt(parts[1]);
+                double sold = Double.parseDouble(parts[2]);
+                double profit = Double.parseDouble(parts[3]);
+
+                ProductSummaryData productSummary = productMap.getOrDefault(product, null);
+
+                if (productSummary != null) {
+                    productSummary.update(quantity, sold, profit);
+                } else {
+                    productMap.put(product, new ProductSummaryData(quantity, sold, profit));
+                }
             }
         }
 
@@ -253,6 +280,16 @@ public class WorkerFunctions {
         List<String> mergedContent = new ArrayList<>();
         for (Map.Entry<String, Double> entry : storeProfitMap.entrySet()) {
             String line = entry.getKey() + ";" + entry.getValue();
+            mergedContent.add(line);
+        }
+
+        for (Map.Entry<String, ProductSummaryData> entry : productMap.entrySet()) {
+            String key = entry.getKey();
+            ProductSummaryData productSummaryData =  entry.getValue();
+
+            String line = key + ";" + productSummaryData.getTotalQuantity() 
+                + ";" + productSummaryData.getTotalSold() + ";" + productSummaryData.getTotalProfit();
+
             mergedContent.add(line);
         }
 
@@ -269,5 +306,78 @@ public class WorkerFunctions {
         } catch (S3Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public static void summarizeSalesByProduct(Map<String, Map<String, ProductSummaryData>> productSummaries,
+            String downloadedFileName) {
+        // Read the content of the file
+        List<String> csvData = readContentFromFile(downloadedFileName);
+
+        // Summarize by product
+        for (String line : csvData) {
+            String[] columns = line.split(";");
+            if (columns.length == 8) { // Assuming there are 8 columns in the CSV
+                String date = extractDate(columns[0]);
+                String product = columns[2];
+                int quantity = Integer.parseInt(columns[3]);
+                double totalSold = Double.parseDouble(columns[7]);
+                double totalProfit = Double.parseDouble(columns[6]);
+
+                // Update the product summary
+                productSummaries
+                    .computeIfAbsent(date, k -> new HashMap<>())
+                    .compute(product, (key, summary) -> {
+                        if (summary == null) {
+                            return new ProductSummaryData(quantity, totalSold, totalProfit);
+                        } else {
+                            summary.update(quantity, totalSold, totalProfit);
+                            return summary;
+                        }
+                    });
+            }
+        }
+    }
+
+    public static Map<String, List<String>> createResumeFiles(Map<String, Map<String, Double>> storeSummaries,
+            Map<String, Map<String, ProductSummaryData>> productSummaries) {
+        Map<String, List<String>> fileNames = new HashMap<>();
+
+        fileNames.put("storeResumes", createStoreResumeFiles(storeSummaries));
+        fileNames.put("productResumes", createProductResumeFiles(productSummaries));
+
+        return fileNames;
+    }
+
+    public static List<String> createProductResumeFiles(Map<String, Map<String, ProductSummaryData>> productSummaries) {
+        List<String> fileNames = new ArrayList<>();
+
+        for (Map.Entry<String, Map<String, ProductSummaryData>> dateEntry : productSummaries.entrySet()) {
+            String date = dateEntry.getKey();
+            Map<String, ProductSummaryData> productProfits = dateEntry.getValue();
+
+            // Create the file name with the current date
+            String productsResumeFileName = date + "-products-resume.csv";
+
+            // Write the summaries to the products resume file
+            try (OutputStream os = new FileOutputStream(productsResumeFileName)) {
+                // Write header
+                os.write("Product;Total quantity;Total sold;Total profit".getBytes());
+
+                for (Map.Entry<String, ProductSummaryData> productEntry : productProfits.entrySet()) {
+                    String product = productEntry.getKey();
+                    ProductSummaryData summary = productEntry.getValue();
+
+                    // Write the data to the file
+                    String line = System.lineSeparator() + String.format("%s;%d;%.2f;%.2f", product, summary.getTotalQuantity(),
+                        summary.getTotalSold(), summary.getTotalProfit());
+                    os.write(line.getBytes());
+                }
+
+                fileNames.add(productsResumeFileName);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return fileNames;
     }
 }

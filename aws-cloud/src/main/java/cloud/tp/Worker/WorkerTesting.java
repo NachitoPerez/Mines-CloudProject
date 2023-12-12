@@ -22,8 +22,7 @@ public class WorkerTesting {
 
         String queueURL = args[0];
         Map<String, Map<String, Double>> storeSummaries = new HashMap<>();
-        //TODO: implement products summarization
-        //Map<String, Quartet<String, Integer, Double, Double>> productSummaries = new HashMap<>();
+        Map<String,Map<String, ProductSummaryData>> productSummaries = new HashMap<>();
 
         SqsClient sqsClient = SqsClient.builder().region(region).build();
 
@@ -47,7 +46,7 @@ public class WorkerTesting {
                 // Download the file from S3
                 String downloadedFileName = WorkerFunctions.downloadFileFromS3(bucketName, fileName);
 
-                //summarize by store
+                
                 if (downloadedFileName != null){
                     // Initialize the map if not already initialized
                     if (storeSummaries == null) {
@@ -56,6 +55,8 @@ public class WorkerTesting {
 
                     // Summarize by store
                     WorkerFunctions.summarizeSalesByStore(storeSummaries, downloadedFileName);
+                    // Summarize by product
+                    WorkerFunctions.summarizeSalesByProduct(productSummaries, downloadedFileName);
                 }
 
                 // Delete the processed message from the queue
@@ -73,8 +74,8 @@ public class WorkerTesting {
         } 
 
         if (!storeSummaries.isEmpty()) {
-            List<String> fileNamesCreated = WorkerFunctions.createStoreResumeFiles(storeSummaries);
-            WorkerFunctions.uploadProductsResumeFileToS3(fileNamesCreated);
+            Map<String, List<String>> fileNamesCreated = WorkerFunctions.createResumeFiles(storeSummaries, productSummaries);
+            WorkerFunctions.uploadResumeFilesToS3(fileNamesCreated);
         }
 
         // Close the SQS client

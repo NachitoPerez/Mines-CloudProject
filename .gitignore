@@ -1,5 +1,5 @@
 sales-data
 ProjectDiagram
-aws-cloud/target/classes/cloud/tp/emseCourse
 .vscode
 aws-cloud/src/main/java/cloud/tp/emseCourse
+*.csv
