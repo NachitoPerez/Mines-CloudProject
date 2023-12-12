@@ -1,8 +1,11 @@
 package cloud.tp.Worker;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Reader;
@@ -18,18 +21,17 @@ import java.util.stream.Collectors;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
-import org.javatuples.Quartet;
 
 import cloud.tp.Constants;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.regions.Region;
-// import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.sqs.model.DeleteMessageRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsRequest;
 import software.amazon.awssdk.services.s3.model.ListObjectsResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -70,8 +72,6 @@ public class WorkerTesting {
                 String bucketName = messageParts[0];
                 String fileName = messageParts[1];
 
-                System.out.println("Message content: " + bucketName + ";" + fileName);
-
                 // Download the file from S3
                 String downloadedFileName = downloadFileFromS3(bucketName, fileName);
 
@@ -94,29 +94,24 @@ public class WorkerTesting {
                             storeSummaries.put(key, new HashMap<>(moreStoreSummaries.get(key)));
                         }
                     }
-                    
-                    System.out.println("array: " + storeSummaries);
-                    //createStoresResumeFile(storeSummaries);
-
                 }
 
                 receiveResponse = sqsClient.receiveMessage(receiveRequest);
                 messages = receiveResponse.messages();
 
-
                 // Delete the processed message from the queue
-                // String receiptHandle = message.receiptHandle();
-                // sqsClient.deleteMessage(DeleteMessageRequest.builder()
-                //         .queueUrl(queueURL)
-                //         .receiptHandle(receiptHandle)
-                //         .build());
+                String receiptHandle = message.receiptHandle();
+                sqsClient.deleteMessage(DeleteMessageRequest.builder()
+                        .queueUrl(queueURL)
+                        .receiptHandle(receiptHandle)
+                        .build());
             } else {
                 System.out.println("Invalid message format: " + message.body());
             }
         } 
 
         if (!storeSummaries.isEmpty()) {
-            List<String> fileNamesCreated = createProductsResumeFiles(storeSummaries);
+            List<String> fileNamesCreated = createStoreResumeFiles(storeSummaries);
             uploadProductsResumeFileToS3(fileNamesCreated);
         }
 
@@ -201,7 +196,7 @@ public class WorkerTesting {
                         Collectors.summingDouble(row -> Double.parseDouble(row.get("Unit_Profit"))))));
     }
 
-    private static List<String> createProductsResumeFiles(Map<String, Map<String, Double>> storeSummaries) {
+    private static List<String> createStoreResumeFiles(Map<String, Map<String, Double>> storeSummaries) {
         List<String> fileNames = new ArrayList<>();
 
         for (Map.Entry<String, Map<String, Double>> dateEntry : storeSummaries.entrySet()) {
@@ -209,10 +204,10 @@ public class WorkerTesting {
             Map<String, Double> storeProfits = dateEntry.getValue();
 
             // Create the file name with the current date
-            String productsResumeFileName = date + "-products-resume.csv";
+            String storesResumeFileName = date + "-stores-resume.csv";
 
             // Write the summaries to the products resume file
-            try (OutputStream os = new FileOutputStream(productsResumeFileName)) {
+            try (OutputStream os = new FileOutputStream(storesResumeFileName)) {
                 // Write header
                 os.write("Store;TotalDailyProfit".getBytes());
 
@@ -225,8 +220,7 @@ public class WorkerTesting {
                     os.write(line.getBytes());
                 }
 
-                System.out.println("Products resume file created: " + productsResumeFileName);
-                fileNames.add(productsResumeFileName);
+                fileNames.add(storesResumeFileName);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -235,29 +229,120 @@ public class WorkerTesting {
     }
 
     private static void uploadProductsResumeFileToS3(List<String> fileNames) {
-        //TODO: check if file already exists
-            // in case it exists, add the information
         S3Client s3Client = S3Client.builder().region(Region.US_EAST_1).build();
 
         try {
             for (String fileName : fileNames) {
-                File fileToUpload = new File(fileName);
                 String key = "storeResumes/" + fileName;
+    
+                // Check if the object already exists in the bucket
+                String existingFileName = downloadFileFromS3(Constants.BUCKET_NAME, key);
+    
+                if (existingFileName != null) {
+                    // Object exists, read and merge the content with the new file    
+                    // Read the existing content from the existing file
+                    List<String> existingContent = readContentFromFile(existingFileName);
+                    
+                    // Read the new content from the new file
+                    List<String> newContent = readContentFromFile(fileName);
+    
+                    // Merge the content
+                    List<String> mergedContent = mergeContent(existingContent, newContent);
 
-                PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                        .bucket(Constants.BUCKET_NAME)
-                        .key(key)
-                        .build();
+                    // Create file with updated content
+                    try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+                        writer.write("Store;TotalDailyProfit");
+                        writer.newLine();
+                        for (String line : mergedContent) {
+                            writer.write(line);
+                            writer.newLine();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
 
-                s3Client.putObject(putObjectRequest, fileToUpload.toPath());
-
+                uploadNewObject(s3Client, Constants.BUCKET_NAME, key, new File(fileName));
+    
                 System.out.println("File uploaded to S3 bucket: " + Constants.BUCKET_NAME + ", Key: " + key);
             }
+
         } catch (S3Exception e) {
             e.printStackTrace();
         } finally {
             // Close the S3 client
             s3Client.close();
+        }
+    }
+
+    private static List<String> readContentFromFile(String fileName) 
+    {
+        // Implement logic to read the content of the file
+        // You may use FileReader, BufferedReader, or other approaches
+
+        List<String> content = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
+            // Skip the header line
+            reader.readLine();
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.add(line);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return content;
+    }
+
+    private static List<String> mergeContent(List<String> existingContent, List<String> newContent) {
+        // Implement logic to merge existing and new content
+        // This depends on the structure of your files and how you want to update them
+
+        Map<String, Double> storeProfitMap = new HashMap<>();
+
+        // Populate storeProfitMap with existing content
+        for (String line : existingContent) {
+            //System.out.println("parts: " + line);
+            String[] parts = line.split(";");
+            if (parts.length == 2) {
+                String store = parts[0];
+                double totalProfit = Double.parseDouble(parts[1]);
+                storeProfitMap.put(store, totalProfit);
+            }
+        }
+
+        // Update storeProfitMap with new content
+        for (String line : newContent) {
+            String[] parts = line.split(";");
+            if (parts.length == 2) {
+                String store = parts[0];
+                double totalProfit = Double.parseDouble(parts[1]);
+                storeProfitMap.merge(store, totalProfit, Double::sum);
+            }
+        }
+
+        // Convert storeProfitMap back to a list of strings
+        List<String> mergedContent = new ArrayList<>();
+        for (Map.Entry<String, Double> entry : storeProfitMap.entrySet()) {
+            String line = entry.getKey() + ";" + entry.getValue();
+            mergedContent.add(line);
+        }
+
+        return mergedContent;
+    }
+
+    private static void uploadNewObject(S3Client s3Client, String bucketName, String key, File file) {
+        // Upload the new file to S3
+        try {
+            s3Client.putObject(PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build(), file.toPath());
+        } catch (S3Exception e) {
+            e.printStackTrace();
         }
     }
 }
