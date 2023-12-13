@@ -44,7 +44,7 @@ public class ConsolidatorApp {
         String downloadedProductFileName = downloadFileFromS3(bucketName, productSummaryFileName);
 
         // Perform calculations and display results
-        displayResults(downloadedStoreFileName, downloadedProductFileName);
+        displayResults(date, downloadedStoreFileName, downloadedProductFileName);
     }
 
     private static String downloadFileFromS3(String bucketName, String fileName) {
@@ -64,14 +64,14 @@ public class ConsolidatorApp {
             ResponseBytes<GetObjectResponse> objectBytes = s3Client.getObjectAsBytes(objectRequest);
             byte[] data = objectBytes.asByteArray();
 
-            File file = new File("fileToProcess.csv");
+            File file = new File(fileName);
             try (OutputStream os = new FileOutputStream(file)) {
                 os.write(data);
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
-            return "fileToProcess.csv";
+            return fileName;
         } else {
             System.out.println("File is not available in the Bucket");
         }
@@ -142,7 +142,7 @@ public class ConsolidatorApp {
             messageP2 = " with a total profit of: ";
         }
         else{
-            messageP1 = "Most profitable store: ";
+            messageP1 = "Most profitable store: Store ";
             messageP2 = " with a total profit of: ";
         }
 
@@ -173,13 +173,46 @@ public class ConsolidatorApp {
            
     }
 
+    private static void printProdResults(String fileName)
+    {
+        List<Map<String, String>> csvData = parseCSVFile(fileName);
+
+        DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance(Locale.US);
+        symbols.setDecimalSeparator('.');
+        DecimalFormat decimalFormat = new DecimalFormat("$#,##0.0#", symbols);
+
+        for (String key : csvData.get(0).keySet()) {
+            System.out.printf("| %-20s ", key); // Adjust the width as needed
+        }
+        System.out.println("");
+        System.out.println("------------------------------------------------------------------------");
+         for (Map<String, String> row : csvData) {
+            for (Map.Entry<String, String> entry : row.entrySet()) {
+                String key = entry.getKey();
+                String value = entry.getValue();
+    
+                if ("Income".equals(key) || "Profit".equals(key)) {
+                    // Apply DecimalFormat for specific columns
+                    System.out.printf("| %-20s ", decimalFormat.format(Double.parseDouble(value)));
+                } else {
+                    System.out.printf("| %-20s ", value);
+                }
+            }
+            System.out.println();
+        }
+       
+        
 
 
-    private static void displayResults(String storeFileName, String productFileName) {
+        
+    }
+
+
+
+    private static void displayResults(String date, String storeFileName, String productFileName) {
         // Implement logic to calculate and display the requested results
-        // ...
-
-        // Example:
+        System.out.println();
+        System.out.println("Day: " + date);
         System.out.println();
         System.out.println("----------------------------------------------------");
         System.out.println();
@@ -190,6 +223,10 @@ public class ConsolidatorApp {
         System.out.println();
         System.out.println("----------------------------------------------------");
         System.out.println();
+        System.out.println("Product summary:");
+        System.out.println("------------------------------------------------------------------------");
+        printProdResults(productFileName);
+
         // ...
     }
 
